@@ -8,8 +8,8 @@ import os
 import re
 import sys
 
-from vc3 import infoservice
-release_version=infoservice.__version__
+from vc3 import core
+release_version=core.__version__
 
 from distutils.core import setup
 from distutils.command.install import install as install_org
@@ -20,22 +20,16 @@ from distutils.command.install_data import install_data as install_data_org
 systemd_files = [ 'etc/vc3-infoservice.service'
                  ]
 
-etc_files = ['etc/vc3-infoservice.conf',
-             'etc/vc3-infoclient.conf',
+etc_files = ['etc/vc3-core.conf'
              ]
 
-sysconfig_files = [
-             'etc/sysconfig/vc3-infoservice',
-             ]
+logrotate_files = ['etc/logrotate/vc3-core',]
 
-logrotate_files = ['etc/logrotate/vc3-infoservice',]
-
-initd_files = ['etc/vc3-infoservice.init',  ]
+initd_files = ['etc/vc3-core.init',  ]
 
 rpm_data_files=[
                 #('/usr/libexec', libexec_files),
                 ('/etc/vc3', etc_files),
-                ('/etc/sysconfig', sysconfig_files),
                 ('/etc/logrotate.d', logrotate_files),                                        
                 ('/etc/init.d', initd_files),
                 ('/usr/lib/systemd/system', systemd_files),                                     
@@ -46,7 +40,6 @@ home_data_files=[
                  #('etc', libexec_files),
                  ('etc', etc_files),
                  ('etc', initd_files),
-                 ('etc', sysconfig_files),
                 ]
 
 def choose_data_files():
@@ -74,21 +67,20 @@ def choose_data_files():
 
 # setup for distutils
 setup(
-    name="vc3-info-service",
+    name="vc3-core",
     version=release_version,
-    description='vc3-info-service package',
-    long_description='''This package contains the VC3 Information Service''',
+    description='vc3-core package',
+    long_description='''This package contains the VC3 Core Service''',
     license='GPL',
     author='John Hover',
     author_email='jhover@bnl.gov',
     maintainer='John Hover',
     maintainer_email='jhover@bnl.gov',
     url='https://github.com/vc3-project',
-    packages=['vc3',
-              'vc3.plugins',
+    packages=['vc3'
               ],
     scripts = [ # Utilities and main script
-               'scripts/vc3-info-service',
+               'scripts/vc3-core',
               ],
     
     data_files = choose_data_files()

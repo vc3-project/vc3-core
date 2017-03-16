@@ -26,26 +26,36 @@ import traceback
 from optparse import OptionParser
 from ConfigParser import ConfigParser
 
+
 # Since script is in package "vc3" we can know what to add to path for 
 # running directly during development
 (libpath,tail) = os.path.split(sys.path[0])
 sys.path.append(libpath)
 
-from vc3.plugin import PluginManager
-from vc3.infoclient import InfoClient 
+from infoclient import InfoClient 
+#from vc3.plugin import PluginManager
 
 class VC3Core(object):
     
-    def __init__(self, config):
+    def __init__(self, request_name, config):
         self.log = logging.getLogger()
         self.log.debug('VC3Core class init...')
+
+        self.request_name = request_name
+
         self.config = config
-        self.certfile = os.path.expanduser(config.get('netcomm','certfile'))
-        self.keyfile = os.path.expanduser(config.get('netcomm', 'keyfile'))
-        self.chainfile = os.path.expanduser(config.get('netcomm','chainfile'))
+
+        self.certfile  = os.path.expanduser(config.get('netcomm', 'certfile'))
+        self.keyfile   = os.path.expanduser(config.get('netcomm', 'keyfile'))
+        self.certfile  = os.path.expanduser(config.get('netcomm', 'certfile'))
+
+        self.builder_path        = os.path.expanduser(config.get('builder', 'path'))
+        self.builder_install_dir = os.path.expanduser(config.get('builder', 'installdir'))
+        self.builder_home_dir    = os.path.expanduser(config.get('builder', 'homedir'))
+        self.builder_env         = config.get('builder', 'environment')
         
-        self.log.debug("certfile=%s" % self.certfile)
-        self.log.debug("keyfile=%s" % self.keyfile)
+        self.log.debug("certfile=%s"  % self.certfile)
+        self.log.debug("keyfile=%s"   % self.keyfile)
         self.log.debug("chainfile=%s" % self.chainfile)
         
         self.infoclient = InfoClient(config)    
@@ -293,3 +303,4 @@ John Hover <jhover@bnl.gov>
 if __name__ == '__main__':
     mcli = VC3CoreCLI()
     mcli.run()
+
