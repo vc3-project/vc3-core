@@ -1,0 +1,11 @@
+include CHANGELOG INSTALL* LICENSE README NOTES CONFIGURATION 
+include bin/*
+include etc/*
+include etc/sysconfig/*
+include etc/logrotate/*
+include libexec/*
+include misc/*
+include docs/*
+include docs/man/*
+include scripts/*
+recursive-include vc3 *.py *.pyc *.pyo
