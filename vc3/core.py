@@ -26,6 +26,8 @@ import traceback
 from optparse import OptionParser
 from ConfigParser import ConfigParser
 
+from multiprocessing import Process
+
 
 # Since script is in package "vc3" we can know what to add to path for 
 # running directly during development
@@ -43,16 +45,21 @@ class VC3Core(object):
 
         self.request_name = request_name
 
+        self.processes    = {}
+
         self.config = config
 
         self.certfile  = os.path.expanduser(config.get('netcomm', 'certfile'))
         self.keyfile   = os.path.expanduser(config.get('netcomm', 'keyfile'))
-        self.certfile  = os.path.expanduser(config.get('netcomm', 'certfile'))
+        self.chainfile = os.path.expanduser(config.get('netcomm', 'chainfile'))
 
         self.builder_path        = os.path.expanduser(config.get('builder', 'path'))
         self.builder_install_dir = os.path.expanduser(config.get('builder', 'installdir'))
-        self.builder_home_dir    = os.path.expanduser(config.get('builder', 'homedir'))
+        self.builder_home_dir    = config.get('builder', 'homedir')
         self.builder_env         = config.get('builder', 'environment')
+
+        self.whitelist_services  = config.get('core', 'whitelist')
+        self.whitelist_services  = self.whitelist_services.split(',')
         
         self.log.debug("certfile=%s"  % self.certfile)
         self.log.debug("keyfile=%s"   % self.keyfile)
@@ -66,7 +73,92 @@ class VC3Core(object):
         while True:
             self.log.debug("Core polling....")
             d = self.infoclient.getdocument('request')
+
+            rs = None
+            try:
+                rs = json.loads(d)
+            except Exception, e:
+                self.log.degub(e)
+                raise e
+
+            if   'request' in rs   and   self.request_name in rs['request']:
+                self.perform_request(rs['request'][self.request_name])
+            else:
+                # There is not a request for this cluster. Should the cluster
+                # start to clean up?
+                raise Exception("HELLO")
+                pass
+
             time.sleep(5)
+
+    def terminate(self):
+        '''
+        Like an 'empty' request, to vacate all running services.
+        '''
+        return self.terminate_old_services({})
+
+
+    def perform_request(self, request):
+        for service_name in request:
+            if not service_name in self.whitelist_services:
+                continue
+
+            action = None
+            try:
+                action = request[service_name]['action']
+            except KeyError:
+                action = "not-specified"
+
+            self.log.info(action)
+            self.log.info(request)
+
+            if not action == 'spawn':
+                continue
+
+            if not service_name in self.processes or not self.processes[service_name].is_alive():
+                self.processes[service_name] = self.execute(service_name)
+
+        # terminate site requests that are no longer present
+        self.terminate_old_services(request)
+
+    def execute(self, service_name):
+        def service_factory():
+            cmd = self.builder_path
+            cmd += ' --make-jobs ' + str(4)
+            cmd += ' --install   ' + self.builder_install_dir 
+            cmd += ' --home      ' + self.builder_home_dir
+            cmd += ' --require   ' + self.builder_env
+            cmd += ' --require   ' + service_name
+            return os.system(cmd) 
+
+        p = Process(target = service_factory)
+        self.log.info('Starting service ' + service_name)
+        p.start()
+        return p
+
+    def terminate_old_services(self,request):
+        '''
+        Terminate those services that no longer appear on the request.
+        '''
+        services_to_delete = []
+        for service_name in self.processes:
+
+            action = None
+            try:
+                action = request[service_name]['action']
+            except KeyError:
+                action = "not-specified"
+
+            if (not service_name in request) or (action == 'off'):
+                self.log.info('Terminating service ' + service_name)
+
+                self.processes[service_name].terminate()
+                self.processes[service_name].join(60)
+
+                services_to_delete.append(service_name)
+        for service_name in services_to_delete:
+            del self.processes[service_name]
+
        
     
 
