@@ -1,0 +1,13 @@
+[Unit]
+Description=VC3 Core Service
+After=network-online.target 
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=-/etc/sysconfig/vc3-core
+ExecStart=/usr/libexec/vc3-core.init start
+ExecStop=/usr/libexec/vc3-core.init stop
+ExecReload=/usr/libexec/vc3-core.init restart
+
+[Install]
+WantedBy=multi-user.target

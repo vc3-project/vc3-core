@@ -1,0 +1,235 @@
+#!/bin/bash
+
+SERVICENAME=vc3-core
+SERVICEDESC="VC3 Request Orchestrator"
+#
+#   /etc/rc.d/init.d/vc3-core
+#
+# Starts the VC3 Request Orchestrator daemon
+#
+# chkconfig: 345 26 74
+# description: Submit pilot jobs to grid sites. 
+# processname: vc3-core
+# config: /etc/vc3/vc3-core.conf 
+# pidfile: /var/run/vc3-core.pid
+#
+
+### BEGIN INIT INFO
+# Provides: vc3-info-service
+# Required-Start: $syslog $local_fs
+# Required-Stop: $syslog $local_fs
+# Default-Start:  2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: start and stop vc3-info-service
+# Description: Central information store for VC3 
+### END INIT INFO
+
+# Source function library.
+# Standard RedHat
+if [ -f /etc/rc.d/init.d/functions ]; then
+   . /etc/rc.d/init.d/functions
+fi
+
+# Use LSB locations for e.g. SuSE
+if [ -f /lib/lsb/init-functions ]; then
+   . /lib/lsb/init-functions
+fi
+
+# Source standard environment
+for i in /etc/profile.d/*.sh; do
+    if [ -r "$i" ]; then
+            . $i >/dev/null 2>&1
+    fi
+done
+
+
+f_exedir(){
+    # little function to find out where actually
+    # this script is located.
+    # In case of an user custom installation it could
+    # be in a place different that both /etc/init.d/ or the $HOME dir.
+    # The current location is recorded in variable FACTDIR
+    
+    OLD_DIR=$PWD
+    DIRPATH=`dirname $0`
+    cd $DIRPATH
+    EXEDIR=$PWD
+    cd $OLD_DIR
+}
+
+
+# Determine usage context and set paths accordingly.  
+#   -- for root it means RPM
+#   -- for non-root, assumes home directory installation
+
+f_exedir
+
+if [ `id -u` = 0 ]; then
+    HEAD=/
+    SYSCONF=/etc/sysconfig/$SERVICENAME
+    BINDIR=/usr/bin
+    ETCDIR=/etc/$SERVICENAME
+    PIDFILE=/var/run/$SERVICENAME.pid
+else
+    HEAD=`dirname $EXEDIR`
+    SYSCONF=$HEAD/etc/sysconfig/$SERVICENAME
+    BINDIR=$HEAD/bin
+    ETCDIR=$HEAD/etc
+    PIDFILE=$HEAD/var/run/$SERVICENAME.pid
+fi
+
+# Sensible defaults
+CONFFILE=$ETCDIR/$SERVICENAME.conf
+LOGFILE=/var/log/$SERVICENAME/$SERVICENAME.log
+CONSOLE_LOG=/var/log/$SERVICENAME/console.log
+OPTIONS="--debug --sleep=60 --runas=vc3 --log=$LOGFILE"
+
+# Source settings from sysconfig
+# overriding default if present
+
+if [ -f $SYSCONF ]; then
+   . $SYSCONF
+fi
+
+if [ -f /etc/profile ]; then
+   . /etc/profile
+fi
+
+if [ -n "$GRIDSETUP" ]; then
+   . $GRIDSETUP
+fi
+
+
+RETVAL=0
+#
+# See how we were called.
+#
+check() {
+    
+    # Check if autopyfactory.py is executable
+    test -x $BINDIR/$SERVICENAME || exit 5
+}
+
+create_var_run(){
+    # function to create directory  $HEAD/var/run 
+    # if it does not exist. 
+    # It is needed to place the file vc3core.pid 
+    if [ ! -d $HEAD/var/run/ ]; then
+        mkdir -p $HEAD/var/run/
+    fi
+}
+
+create_var_log(){
+    # function to create directory  $HEAD/var/log/$SERVICENAME 
+    # if it does not exist. 
+    if [ ! -d $HEAD/var/log/vc3 ]; then
+        mkdir -p $HEAD/var/log/vc3
+    fi
+}
+
+
+start() {
+    # Check if it is already running
+    PROGRETVAL=0
+    if [ ! -f $PIDFILE ]; then
+        echo -n $"Starting $SERVICENAME daemon: "  
+        create_var_run
+        create_var_log
+        # daemon --pidfile=${PIDFILE} "$BINDIR/$SERVICENAME --conf $CONFFILE $OPTIONS "
+        if [ -n "$CONSOLE_LOG" ]; then
+            $BINDIR/$SERVICENAME --conf $CONFFILE $OPTIONS >> $CONSOLE_LOG 2>&1 &
+        else
+            $BINDIR/$SERVICENAME --conf $CONFFILE $OPTIONS &
+        fi
+        RETVAL=$?
+        PID=$!
+        [ "$RETVAL" -eq 0 ] && echo $! > $PIDFILE        
+
+        sleep 3
+        if checkpid $PID; then
+            PROGRETVAL=0
+        else
+            wait $PID
+            PROGRETVAL=$?
+            rm -f $PIDFILE
+        fi
+        [ "$PROGRETVAL" -eq 0 ] && success $"$SERVICENAME startup" || failure $"$SERVICENAME startup"
+        echo
+    else
+        if checkpid $PID; then
+            echo "$0: daemon with PID $PID already running." && success $"$SERVICENAME startup"
+            PROGRETVAL=0
+        else
+            echo "$0: daemon dead but PID file exists: $PIDFILE" && failure $"$SERVICENAME startup"
+            PROGRETVAL=1
+        fi
+    fi
+
+    return $PROGRETVAL
+}
+
+stop() {
+
+    check
+    echo -n $"Stopping $SERVICENAME daemon: "
+    killproc -p $PIDFILE $SERVICENAME
+    RETVAL=$?
+    [ $RETVAL -eq 0 ] && rm -f $PIDFILE && success $"$SERVICENAME shutdown" || failure $"$SERVICENAME shutdown"
+    echo
+    return $RETVAL
+}
+
+
+restart() {
+    stop
+    sleep 2
+    start
+    RETVAL=$?
+    return $RETVAL
+}   
+
+debugrestart() {
+    stop
+    sleep 2
+    # make a copy of the latest log file
+    if [ -f $LOGFILE ]; then 
+        mv $LOGFILE $LOGFILE-`date -u +%Y%m%d.%H%M%S`
+    fi
+    start
+    RETVAL=$?
+    return $RETVAL
+}
+
+case "$1" in
+start)
+    start
+    RETVAL=$?
+    ;;
+stop)
+    stop
+    RETVAL=$?
+    ;;
+restart)
+    restart
+    RETVAL=$?
+    ;;
+debugrestart)
+    debugrestart
+    RETVAL=$?
+    ;;
+condrestart)
+    if [ -f /var/lock/subsys/$SERVICENAME ]; then
+        restart
+    fi
+    RETVAL=$?
+    ;;
+status)
+    status vc3-info-service
+    RETVAL=$?
+    ;;
+*)
+    echo $"Usage: $0 {start|stop|status|restart|debugrestart|condrestart}"
+    RETVAL=2
+esac
+
+exit $RETVAL

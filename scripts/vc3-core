@@ -1,0 +1,16 @@
+#!/usr/bin/env python
+#
+# Very simple wrapper to go in /usr/bin to be executed by init script. 
+#
+from vc3.core import VC3CoreCLI
+
+def main():
+    '''
+    Simplest possible invocation of Infoservice program. Does not have the .py extension
+    to keep the RPM building system happy. 
+    '''
+    srv = VC3CoreCLI()
+    srv.run()
+        
+if __name__ == "__main__":
+    main()
