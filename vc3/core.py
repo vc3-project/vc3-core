@@ -24,9 +24,10 @@ import time
 import traceback
 
 from optparse import OptionParser
-from ConfigParser import ConfigParser
+from ConfigParser import ConfigParser, NoOptionError
 
 from multiprocessing import Process
+import subprocess
 
 
 # Since script is in package "vc3" we can know what to add to path for 
@@ -57,6 +58,11 @@ class VC3Core(object):
         self.builder_install_dir = os.path.expanduser(config.get('builder', 'installdir'))
         self.builder_home_dir    = config.get('builder', 'homedir')
         self.builder_env         = config.get('builder', 'environment')
+
+        try:
+            self.builder_n_jobs = config.get('builder', 'n_jobs')
+        except NoOptionError, e:
+            self.builder_n_jobs = 4
 
         self.whitelist_services  = config.get('core', 'whitelist')
         self.whitelist_services  = self.whitelist_services.split(',')
@@ -95,23 +101,35 @@ class VC3Core(object):
         '''
         Like an 'empty' request, to vacate all running services.
         '''
-        return self.terminate_old_services({})
+        self.terminate_old_services({})
+        sys.exit(0)
 
 
     def perform_request(self, request):
-        for service_name in request:
+        if not 'action' in request:
+            self.log.info("malformed request for '%s'. no action specified." % (self.request_name))
+            return
+
+        if not 'services' in request:
+            self.log.info("malformed request for '%s'. no services specified." % (self.request_name))
+            return
+
+        action   = request['action']
+        services = request['services']
+
+        if action == 'terminate':
+            self.terminate()
+
+        for service_name in services:
             if not service_name in self.whitelist_services:
+                self.log.info("service '%s' is not whitelisted for %s." % (service_name,self.request_name))
                 continue
 
-            action = None
-            try:
-                action = request[service_name]['action']
-            except KeyError:
-                action = "not-specified"
+            if not 'action' in services[service_name]:
+                self.log.info("malformed request for '%s:%s'. no action specified." % (self.request_name,service_name))
+                continue
 
-            self.log.info(action)
-            self.log.info(request)
-
+            action = services[service_name]['action']
             if not action == 'spawn':
                 continue
 
@@ -123,13 +141,18 @@ class VC3Core(object):
 
     def execute(self, service_name):
         def service_factory():
-            cmd = self.builder_path
-            cmd += ' --make-jobs ' + str(4)
-            cmd += ' --install   ' + self.builder_install_dir 
-            cmd += ' --home      ' + self.builder_home_dir
-            cmd += ' --require   ' + self.builder_env
-            cmd += ' --require   ' + service_name
-            return os.system(cmd) 
+            cmd = [self.builder_path,
+                    '--make-jobs', str(self.builder_n_jobs),
+                    '--install',   self.builder_install_dir,
+                    '--home',      self.builder_home_dir,
+                    '--require',   self.builder_env,
+                    '--require',   service_name]
+            try:
+                subprocess.check_call(cmd)
+                return 0
+            except subprocess.CalledProcessError, ex:
+                self.log.info("Service terminated: '" + self.request_name + ":" + service_name + "': " + ex)
+                return ex.returncode
 
         p = Process(target = service_factory)
         self.log.info('Starting service ' + service_name)
@@ -150,12 +173,14 @@ class VC3Core(object):
                 action = "not-specified"
 
             if (not service_name in request) or (action == 'off'):
-                self.log.info('Terminating service ' + service_name)
+                self.log.info('Terminating service...' + service_name)
 
                 self.processes[service_name].terminate()
                 self.processes[service_name].join(60)
-
                 services_to_delete.append(service_name)
+
+                self.log.info('Terminated: ' + service_name)
+
         for service_name in services_to_delete:
             del self.processes[service_name]
 
