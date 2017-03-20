@@ -16,6 +16,7 @@ import platform
 import pwd
 import random
 import json
+import shutil
 import string
 import socket
 import sys
@@ -58,6 +59,17 @@ class VC3Core(object):
         self.builder_install_dir = os.path.expanduser(config.get('builder', 'installdir'))
         self.builder_home_dir    = config.get('builder', 'homedir')
         self.builder_env         = config.get('builder', 'environment')
+
+        self.request_log_dir     = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'logs')
+        self.request_runtime_dir = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'runtime')
+
+        # runtime is particular to a run, so we clean it up if it exists
+        if os.path.isdir(self.request_runtime_dir):
+            shutil.rmtree(self.request_runtime_dir)
+
+        for dir in [self.request_log_dir, self.request_runtime_dir]:
+            if not os.path.isdir(dir):
+                os.makedirs(dir)
 
         try:
             self.builder_n_jobs = config.get('builder', 'n_jobs')
@@ -134,24 +146,35 @@ class VC3Core(object):
                 continue
 
             if not service_name in self.processes or not self.processes[service_name].is_alive():
-                self.processes[service_name] = self.execute(service_name)
+                cmd = service_name
+                if 'command' in services[service_name]:
+                    cmd = services[service_name]['command']
+
+                self.processes[service_name] = self.execute(service_name, cmd)
 
         # terminate site requests that are no longer present
-        self.terminate_old_services(request)
+        #self.terminate_old_services(request)
 
-    def execute(self, service_name):
+    def execute(self, service_name, payload):
         def service_factory():
             cmd = [self.builder_path,
+                    '--var',       'VC3_REQUEST_NAME='        + self.request_name,
+                    '--var',       'VC3_REQUEST_LOG_DIR='     + self.request_log_dir,
+                    '--var',       'VC3_REQUEST_RUNTIME_DIR=' + self.request_runtime_dir,
                     '--make-jobs', str(self.builder_n_jobs),
                     '--install',   self.builder_install_dir,
                     '--home',      self.builder_home_dir,
                     '--require',   self.builder_env,
-                    '--require',   service_name]
+                    '--require',   service_name,
+                    '--']
+            # until we have arrays in json, assume ' ' as argument separator
+            cmd.extend(payload.split())
             try:
+                self.log.info("Executing: %s" % (str(cmd),))
                 subprocess.check_call(cmd)
                 return 0
             except subprocess.CalledProcessError, ex:
-                self.log.info("Service terminated: '" + self.request_name + ":" + service_name + "': " + ex)
+                self.log.info("Service terminated: '" + self.request_name + ":" + service_name + "': " + (ex))
                 return ex.returncode
 
         p = Process(target = service_factory)
@@ -173,7 +196,7 @@ class VC3Core(object):
                 action = "not-specified"
 
             if (not service_name in request) or (action == 'off'):
-                self.log.info('Terminating service...' + service_name)
+                self.log.info('Terminating service... ' + service_name)
 
                 self.processes[service_name].terminate()
                 self.processes[service_name].join(60)
