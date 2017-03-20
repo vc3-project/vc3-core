@@ -71,6 +71,16 @@ class VC3Core(object):
             if not os.path.isdir(dir):
                 os.makedirs(dir)
 
+        self.host_address = self.__my_host_address()
+        try:
+            f = open(os.path.join(self.request_runtime_dir, 'hostname'), 'w')
+            f.write(self.host_address)
+            f.close()
+            # probably we want to inform the infoservice too... 
+        except Exception, e:
+            self.log.info(str(e))
+            raise e
+
         try:
             self.builder_n_jobs = config.get('builder', 'n_jobs')
         except NoOptionError, e:
@@ -103,6 +113,17 @@ class VC3Core(object):
 
     def __del__(self):
         return self.__exit__(None, None, None)
+
+    def __my_host_address(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('10.255.255.255', 0))
+            addr = s.getsockname()[0]
+        except:
+            addr = '127.0.0.1'
+        finally:
+            s.close()
+        return addr
         
     def run(self):
         self.log.debug('Core running...')
