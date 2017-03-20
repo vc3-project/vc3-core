@@ -85,6 +85,24 @@ class VC3Core(object):
         
         self.infoclient = InfoClient(config)    
         self.log.debug('VC3Core class done.')
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            dir = self.request_runtime_dir
+        except AttributeError:
+            # __init__ did not finish running
+            pass
+
+        # runtime is particular to a run, so we clean it up if it exists
+        if os.path.isdir(self.request_runtime_dir):
+            shutil.rmtree(self.request_runtime_dir)
+        return self
+
+    def __del__(self):
+        return self.__exit__(None, None, None)
         
     def run(self):
         self.log.debug('Core running...')
