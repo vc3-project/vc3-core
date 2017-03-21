@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 import traceback
+import urllib
 
 from optparse import OptionParser
 from ConfigParser import ConfigParser, NoOptionError
@@ -62,6 +63,10 @@ class VC3Core(object):
 
         self.request_log_dir     = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'logs')
         self.request_runtime_dir = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'runtime')
+
+        os.environ['VC3_REQUEST_NAME']        = self.request_name
+        os.environ['VC3_REQUEST_LOG_DIR']     = self.request_log_dir
+        os.environ['VC3_REQUEST_RUNTIME_DIR'] = self.request_runtime_dir
 
         # runtime is particular to a run, so we clean it up if it exists
         if os.path.isdir(self.request_runtime_dir):
@@ -172,27 +177,52 @@ class VC3Core(object):
             self.terminate()
 
         for service_name in services:
-            if not service_name in self.whitelist_services:
-                self.log.info("service '%s' is not whitelisted for %s." % (service_name,self.request_name))
-                continue
+            service = services[service_name]
+            self.perform_service_request(service_name, service)
 
-            if not 'action' in services[service_name]:
-                self.log.info("malformed request for '%s:%s'. no action specified." % (self.request_name,service_name))
-                continue
+    def perform_service_request(self, service_name, service):
+        if not service_name in self.whitelist_services:
+            self.log.info("service '%s' is not whitelisted for %s." % (service_name,self.request_name))
+            return
 
-            action = services[service_name]['action']
-            if not action == 'spawn':
-                continue
+        if not 'action' in service:
+            self.log.info("malformed request for '%s:%s'. no action specified." % (self.request_name,service_name))
+            return
 
-            if not service_name in self.processes or not self.processes[service_name].is_alive():
-                cmd = service_name
-                if 'command' in services[service_name]:
-                    cmd = services[service_name]['command']
+        action = service['action']
+        if not action == 'spawn':
+            return
 
-                self.processes[service_name] = self.execute(service_name, cmd)
+        if 'files' in service:
+            files = service['files']
+            for name in files:
+                self.write_request_file(files[name])
+
+        if not service_name in self.processes or not self.processes[service_name].is_alive():
+            cmd = service_name
+            if 'command' in service:
+                cmd = service['command']
+
+            self.processes[service_name] = self.execute(service_name, cmd)
 
         # terminate site requests that are no longer present
         #self.terminate_old_services(request)
+
+    def write_request_file(self, file_spec):
+        try:
+            destination = os.path.expandvars(file_spec['destination'])
+            contents    = file_spec['contents']
+        except KeyError, e:
+            self.log.info('Malformed file specification. Missing key: %s' % (str(e),))
+            raise e
+
+        dir = os.path.dirname(destination)
+        if not os.path.isdir(dir):
+            os.makedirs(dir)
+
+        with open(destination, 'w') as f:
+            decoded = urllib.unquote_plus(contents)
+            f.write(decoded)
 
     def execute(self, service_name, payload):
         def service_factory():
@@ -213,7 +243,7 @@ class VC3Core(object):
                 subprocess.check_call(cmd)
                 return 0
             except subprocess.CalledProcessError, ex:
-                self.log.info("Service terminated: '" + self.request_name + ":" + service_name + "': " + (ex))
+                self.log.info("Service terminated: '" + self.request_name + ":" + service_name + "': " + str(ex))
                 return ex.returncode
 
         p = Process(target = service_factory)
