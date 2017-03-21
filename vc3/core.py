@@ -16,6 +16,7 @@ import platform
 import pwd
 import random
 import json
+import shutil
 import string
 import socket
 import sys
@@ -24,39 +25,232 @@ import time
 import traceback
 
 from optparse import OptionParser
-from ConfigParser import ConfigParser
+from ConfigParser import ConfigParser, NoOptionError
+
+from multiprocessing import Process
+import subprocess
+
 
 # Since script is in package "vc3" we can know what to add to path for 
 # running directly during development
 (libpath,tail) = os.path.split(sys.path[0])
 sys.path.append(libpath)
 
+<<<<<<< HEAD
 from pluginmanager.plugin import PluginManager
 from vc3.infoclient import InfoClient 
+=======
+from infoclient import InfoClient 
+#from vc3.plugin import PluginManager
+>>>>>>> branch 'master' of https://github.com/vc3-project/vc3-core.git
 
 class VC3Core(object):
     
-    def __init__(self, config):
+    def __init__(self, request_name, config):
         self.log = logging.getLogger()
         self.log.debug('VC3Core class init...')
+
+        self.request_name = request_name
+
+        self.processes    = {}
+
         self.config = config
-        self.certfile = os.path.expanduser(config.get('netcomm','certfile'))
-        self.keyfile = os.path.expanduser(config.get('netcomm', 'keyfile'))
-        self.chainfile = os.path.expanduser(config.get('netcomm','chainfile'))
+
+        self.certfile  = os.path.expanduser(config.get('netcomm', 'certfile'))
+        self.keyfile   = os.path.expanduser(config.get('netcomm', 'keyfile'))
+        self.chainfile = os.path.expanduser(config.get('netcomm', 'chainfile'))
+
+        self.builder_path        = os.path.expanduser(config.get('builder', 'path'))
+        self.builder_install_dir = os.path.expanduser(config.get('builder', 'installdir'))
+        self.builder_home_dir    = config.get('builder', 'homedir')
+        self.builder_env         = config.get('builder', 'environment')
+
+        self.request_log_dir     = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'logs')
+        self.request_runtime_dir = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'runtime')
+
+        # runtime is particular to a run, so we clean it up if it exists
+        if os.path.isdir(self.request_runtime_dir):
+            shutil.rmtree(self.request_runtime_dir)
+
+        for dir in [self.request_log_dir, self.request_runtime_dir]:
+            if not os.path.isdir(dir):
+                os.makedirs(dir)
+
+        self.host_address = self.__my_host_address()
+        try:
+            f = open(os.path.join(self.request_runtime_dir, 'hostname'), 'w')
+            f.write(self.host_address)
+            f.close()
+            # probably we want to inform the infoservice too... 
+        except Exception, e:
+            self.log.info(str(e))
+            raise e
+
+        try:
+            self.builder_n_jobs = config.get('builder', 'n_jobs')
+        except NoOptionError, e:
+            self.builder_n_jobs = 4
+
+        self.whitelist_services  = config.get('core', 'whitelist')
+        self.whitelist_services  = self.whitelist_services.split(',')
         
-        self.log.debug("certfile=%s" % self.certfile)
-        self.log.debug("keyfile=%s" % self.keyfile)
+        self.log.debug("certfile=%s"  % self.certfile)
+        self.log.debug("keyfile=%s"   % self.keyfile)
         self.log.debug("chainfile=%s" % self.chainfile)
         
         self.infoclient = InfoClient(config)    
         self.log.debug('VC3Core class done.')
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            dir = self.request_runtime_dir
+        except AttributeError:
+            # __init__ did not finish running
+            pass
+
+        # runtime is particular to a run, so we clean it up if it exists
+        if os.path.isdir(self.request_runtime_dir):
+            shutil.rmtree(self.request_runtime_dir)
+        return self
+
+    def __del__(self):
+        return self.__exit__(None, None, None)
+
+    def __my_host_address(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('10.255.255.255', 0))
+            addr = s.getsockname()[0]
+        except:
+            addr = '127.0.0.1'
+        finally:
+            s.close()
+        return addr
         
     def run(self):
         self.log.debug('Core running...')
         while True:
             self.log.debug("Core polling....")
             d = self.infoclient.getdocument('request')
+
+            rs = None
+            try:
+                rs = json.loads(d)
+            except Exception, e:
+                self.log.degub(e)
+                raise e
+
+            if   'request' in rs   and   self.request_name in rs['request']:
+                self.perform_request(rs['request'][self.request_name])
+            else:
+                # There is not a request for this cluster. Should the cluster
+                # start to clean up?
+                raise Exception("HELLO")
+                pass
+
             time.sleep(5)
+
+    def terminate(self):
+        '''
+        Like an 'empty' request, to vacate all running services.
+        '''
+        self.terminate_old_services({})
+        sys.exit(0)
+
+
+    def perform_request(self, request):
+        if not 'action' in request:
+            self.log.info("malformed request for '%s'. no action specified." % (self.request_name))
+            return
+
+        if not 'services' in request:
+            self.log.info("malformed request for '%s'. no services specified." % (self.request_name))
+            return
+
+        action   = request['action']
+        services = request['services']
+
+        if action == 'terminate':
+            self.terminate()
+
+        for service_name in services:
+            if not service_name in self.whitelist_services:
+                self.log.info("service '%s' is not whitelisted for %s." % (service_name,self.request_name))
+                continue
+
+            if not 'action' in services[service_name]:
+                self.log.info("malformed request for '%s:%s'. no action specified." % (self.request_name,service_name))
+                continue
+
+            action = services[service_name]['action']
+            if not action == 'spawn':
+                continue
+
+            if not service_name in self.processes or not self.processes[service_name].is_alive():
+                cmd = service_name
+                if 'command' in services[service_name]:
+                    cmd = services[service_name]['command']
+
+                self.processes[service_name] = self.execute(service_name, cmd)
+
+        # terminate site requests that are no longer present
+        #self.terminate_old_services(request)
+
+    def execute(self, service_name, payload):
+        def service_factory():
+            cmd = [self.builder_path,
+                    '--var',       'VC3_REQUEST_NAME='        + self.request_name,
+                    '--var',       'VC3_REQUEST_LOG_DIR='     + self.request_log_dir,
+                    '--var',       'VC3_REQUEST_RUNTIME_DIR=' + self.request_runtime_dir,
+                    '--make-jobs', str(self.builder_n_jobs),
+                    '--install',   self.builder_install_dir,
+                    '--home',      self.builder_home_dir,
+                    '--require',   self.builder_env,
+                    '--require',   service_name,
+                    '--']
+            # until we have arrays in json, assume ' ' as argument separator
+            cmd.extend(payload.split())
+            try:
+                self.log.info("Executing: %s" % (str(cmd),))
+                subprocess.check_call(cmd)
+                return 0
+            except subprocess.CalledProcessError, ex:
+                self.log.info("Service terminated: '" + self.request_name + ":" + service_name + "': " + (ex))
+                return ex.returncode
+
+        p = Process(target = service_factory)
+        self.log.info('Starting service ' + service_name)
+        p.start()
+        return p
+
+    def terminate_old_services(self,request):
+        '''
+        Terminate those services that no longer appear on the request.
+        '''
+        services_to_delete = []
+        for service_name in self.processes:
+
+            action = None
+            try:
+                action = request[service_name]['action']
+            except KeyError:
+                action = "not-specified"
+
+            if (not service_name in request) or (action == 'off'):
+                self.log.info('Terminating service... ' + service_name)
+
+                self.processes[service_name].terminate()
+                self.processes[service_name].join(60)
+                services_to_delete.append(service_name)
+
+                self.log.info('Terminated: ' + service_name)
+
+        for service_name in services_to_delete:
+            del self.processes[service_name]
+
        
     
 
@@ -293,3 +487,4 @@ John Hover <jhover@bnl.gov>
 if __name__ == '__main__':
     mcli = VC3CoreCLI()
     mcli.run()
+
