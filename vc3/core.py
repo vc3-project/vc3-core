@@ -38,7 +38,7 @@ import subprocess
 sys.path.append(libpath)
 
 from pluginmanager.plugin import PluginManager
-from vc3.infoclient import InfoClient 
+from infoclient import InfoClient 
 
 class VC3Core(object):
     
@@ -76,15 +76,7 @@ class VC3Core(object):
             if not os.path.isdir(dir):
                 os.makedirs(dir)
 
-        self.host_address = self.__my_host_address()
-        try:
-            f = open(os.path.join(self.request_runtime_dir, 'hostname'), 'w')
-            f.write(self.host_address)
-            f.close()
-            # probably we want to inform the infoservice too... 
-        except Exception, e:
-            self.log.info(str(e))
-            raise e
+        self.__report_conf()
 
         try:
             self.builder_n_jobs = config.get('builder', 'n_jobs')
@@ -119,6 +111,26 @@ class VC3Core(object):
     def __del__(self):
         return self.__exit__(None, None, None)
 
+    def __report_conf(self):
+        self.host_address = self.__my_host_address()
+        try:
+            f = open(os.path.join(self.request_runtime_dir, 'cluster.conf'), 'w')
+
+            # Section should be named 'cluster', but python does not allow interpolation inter sections.
+            # or DEFAULT but apf removes all defaults. We use Factory for now,
+            # since it is the section where we need it.  
+            f.write('[Factory]\n\n')
+            f.write('hostname = ' + self.host_address + '\n')
+
+            f.write('VC3_REQUEST_NAME        = ' + self.request_name        + '\n')
+            f.write('VC3_REQUEST_RUNTIME_DIR = ' + self.request_runtime_dir + '\n')
+            f.write('VC3_REQUEST_LOG_DIR     = ' + self.request_log_dir     + '\n')
+            f.close()
+            # probably we want to inform the infoservice too... 
+        except Exception, e:
+            self.log.info(str(e))
+            raise e
+
     def __my_host_address(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -148,9 +160,7 @@ class VC3Core(object):
             else:
                 # There is not a request for this cluster. Should the cluster
                 # start to clean up?
-                raise Exception("HELLO")
-                pass
-
+                raise Exception("My request went away")
             time.sleep(5)
 
     def terminate(self):
