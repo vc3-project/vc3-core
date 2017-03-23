@@ -38,7 +38,7 @@ import subprocess
 sys.path.append(libpath)
 
 from pluginmanager.plugin import PluginManager
-from infoclient import InfoClient 
+from infoclient import InfoClient
 
 class VC3Core(object):
     
@@ -76,8 +76,6 @@ class VC3Core(object):
             if not os.path.isdir(dir):
                 os.makedirs(dir)
 
-        self.__report_conf()
-
         try:
             self.builder_n_jobs = config.get('builder', 'n_jobs')
         except NoOptionError, e:
@@ -91,6 +89,8 @@ class VC3Core(object):
         self.log.debug("chainfile=%s" % self.chainfile)
         
         self.infoclient = InfoClient(config)    
+        self.__report_cluster()
+
         self.log.debug('VC3Core class done.')
 
     def __enter__(self):
@@ -111,8 +111,15 @@ class VC3Core(object):
     def __del__(self):
         return self.__exit__(None, None, None)
 
-    def __report_conf(self):
+    def __report_cluster(self):
         self.host_address = self.__my_host_address()
+
+        report = {}
+        report['hostname']               = self.host_address
+        report['VC3_REQUEST_NAME']       = self.request_name
+        report['VC3_REQUEST_RUNTIME_DIR'] = self.request_runtime_dir
+        report['VC3_REQUEST_LOG_DIR']     = self.request_log_dir
+
         try:
             f = open(os.path.join(self.request_runtime_dir, 'cluster.conf'), 'w')
 
@@ -120,16 +127,15 @@ class VC3Core(object):
             # or DEFAULT but apf removes all defaults. We use Factory for now,
             # since it is the section where we need it.  
             f.write('[Factory]\n\n')
-            f.write('hostname = ' + self.host_address + '\n')
-
-            f.write('VC3_REQUEST_NAME        = ' + self.request_name        + '\n')
-            f.write('VC3_REQUEST_RUNTIME_DIR = ' + self.request_runtime_dir + '\n')
-            f.write('VC3_REQUEST_LOG_DIR     = ' + self.request_log_dir     + '\n')
+            for key in report:
+                f.write(key + ' = ' + report[key] + '\n')
             f.close()
-            # probably we want to inform the infoservice too... 
         except Exception, e:
             self.log.info(str(e))
             raise e
+
+        pretty = json.dumps({ self.request_name : report }, indent=4, sort_keys=True)
+        self.infoclient.storedocument('runtime', pretty)
 
     def __my_host_address(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
