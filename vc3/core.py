@@ -63,10 +63,12 @@ class VC3Core(object):
 
         self.request_log_dir     = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'logs')
         self.request_runtime_dir = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'runtime')
+        self.request_main_conf   = os.path.join(os.path.expandvars('$VC3_SERVICES_HOME'), 'etc', 'vc3-master.conf')
 
         os.environ['VC3_REQUEST_NAME']        = self.request_name
         os.environ['VC3_REQUEST_LOG_DIR']     = self.request_log_dir
         os.environ['VC3_REQUEST_RUNTIME_DIR'] = self.request_runtime_dir
+        os.environ['VC3_REQUEST_MAIN_CONF']   = self.request_main_conf
 
         # runtime is particular to a run, so we clean it up if it exists
         if os.path.isdir(self.request_runtime_dir):
@@ -246,6 +248,7 @@ class VC3Core(object):
                     '--var',       'VC3_REQUEST_NAME='        + self.request_name,
                     '--var',       'VC3_REQUEST_LOG_DIR='     + self.request_log_dir,
                     '--var',       'VC3_REQUEST_RUNTIME_DIR=' + self.request_runtime_dir,
+                    '--var',       'VC3_REQUEST_MAIN_CONF='   + self.request_main_conf,
                     '--make-jobs', str(self.builder_n_jobs),
                     '--install',   self.builder_install_dir,
                     '--home',      self.builder_home_dir,
