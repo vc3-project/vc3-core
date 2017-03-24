@@ -245,10 +245,12 @@ class VC3Core(object):
     def execute(self, service_name, payload):
         def service_factory():
             cmd = [self.builder_path,
+                    '--silent',
                     '--var',       'VC3_REQUEST_NAME='        + self.request_name,
                     '--var',       'VC3_REQUEST_LOG_DIR='     + self.request_log_dir,
                     '--var',       'VC3_REQUEST_RUNTIME_DIR=' + self.request_runtime_dir,
                     '--var',       'VC3_REQUEST_MAIN_CONF='   + self.request_main_conf,
+                    '--var',       'VC3_SERVICES_HOME='       + os.environ['VC3_SERVICES_HOME'],
                     '--make-jobs', str(self.builder_n_jobs),
                     '--install',   self.builder_install_dir,
                     '--home',      self.builder_home_dir,
