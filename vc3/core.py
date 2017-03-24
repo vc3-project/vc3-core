@@ -356,11 +356,16 @@ John Hover <jhover@bnl.gov>
                           action="store_const", 
                           const=logging.WARNING, 
                           help="Set logging level to WARNING [default]")
+
+        default_conf = "/etc/vc3/vc3-core.conf"
+        if 'VC3_SERVICES_HOME' in os.environ:
+            default_conf = os.path.join(os.environ['VC3_SERVICES_HOME'], 'etc', 'vc3-core.conf') + ',' + default_conf
         parser.add_option("--conf", dest="confFiles", 
-                          default="/etc/vc3/vc3-core.conf",
+                          default=default_conf,
                           action="store", 
                           metavar="FILE1[,FILE2,FILE3]", 
                           help="Load configuration from FILEs (comma separated list)")
+
         parser.add_option("--log", dest="logfile", 
                           default="stdout", 
                           metavar="LOGFILE", 
