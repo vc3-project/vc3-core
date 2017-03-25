@@ -164,13 +164,13 @@ class VC3Core(object):
         self.log.debug('Core running...')
         while True:
             self.log.debug("Core polling....")
-            d = self.infoclient.getdocument('request')
 
             rs = None
             try:
+		d = self.infoclient.getdocument('request')
                 rs = json.loads(d)
             except Exception, e:
-                self.log.degub(e)
+                self.log.debug(e)
                 raise e
 
             if   'request' in rs   and   self.requestid in rs['request']:
