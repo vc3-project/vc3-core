@@ -256,7 +256,7 @@ class VC3Core(object):
         def service_factory():
             cmd = [self.builder_path,
                     '--silent',
-                    '--var',       'VC3_REQUEST_NAME='        + self.requestid,
+                    '--var',       'VC3_REQUESTID='           + self.requestid,
                     '--var',       'VC3_REQUEST_LOG_DIR='     + self.request_log_dir,
                     '--var',       'VC3_REQUEST_RUNTIME_DIR=' + self.request_runtime_dir,
                     '--var',       'VC3_SERVICES_HOME='       + os.environ['VC3_SERVICES_HOME'],
