@@ -111,7 +111,7 @@ class VC3Core(object):
 
         report = {}
         report['hostname']                = self.host_address
-        report['VC3_REQUEST_NAME']        = self.requestid
+        report['VC3_REQUESTID']           = self.requestid
         report['VC3_REQUEST_RUNTIME_DIR'] = self.request_runtime_dir
         report['VC3_REQUEST_LOG_DIR']     = self.request_log_dir
 
