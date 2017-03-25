@@ -209,9 +209,9 @@ class VC3Core(object):
             self.perform_service_request(service_name, service)
 
     def perform_service_request(self, service_name, service):
+        # Disabling whitelisting for now, we just print a message.  
         if not service_name in self.whitelist_services:
-            self.log.info("service '%s' is not whitelisted for %s." % (service_name,self.requestid))
-            return
+            self.log.info("service '%s' is not whitelisted for %s. Proceding anyway." % (service_name,self.requestid))
 
         if not 'action' in service:
             self.log.info("malformed request for '%s:%s'. no action specified." % (self.requestid,service_name))
