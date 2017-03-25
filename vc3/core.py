@@ -63,12 +63,6 @@ class VC3Core(object):
 
         self.request_log_dir     = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'logs')
         self.request_runtime_dir = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'runtime')
-        self.request_main_conf   = os.path.join(os.path.expandvars('$VC3_SERVICES_HOME'), 'etc', 'vc3-master.conf')
-
-        os.environ['VC3_REQUEST_NAME']        = self.request_name
-        os.environ['VC3_REQUEST_LOG_DIR']     = self.request_log_dir
-        os.environ['VC3_REQUEST_RUNTIME_DIR'] = self.request_runtime_dir
-        os.environ['VC3_REQUEST_MAIN_CONF']   = self.request_main_conf
 
         # runtime is particular to a run, so we clean it up if it exists
         if os.path.isdir(self.request_runtime_dir):
@@ -150,21 +144,17 @@ class VC3Core(object):
             s.close()
         return addr
 
-    def __set_builder_opt(option_name, env_var_name):
+    def __set_builder_opt(self, option_name, env_var_name):
         value = None
         # give preference to conf file
         if option_name:
             try:
-                value = config.get('builder', option_name)
+                value = self.config.get('builder', option_name)
             except NoOptionError:
                 pass
 
-        if not value:
-            if env_var_name:
-                try:
-                    value = os.environ[env_var_name]
-                except KeyError:
-                    pass
+        if not value and env_var_name:
+            value = os.environ.get(env_var_name, None)
 
         if not value:
             raise Exception('Could not find value for option.')
@@ -270,7 +260,6 @@ class VC3Core(object):
                     '--var',       'VC3_REQUEST_NAME='        + self.request_name,
                     '--var',       'VC3_REQUEST_LOG_DIR='     + self.request_log_dir,
                     '--var',       'VC3_REQUEST_RUNTIME_DIR=' + self.request_runtime_dir,
-                    '--var',       'VC3_REQUEST_MAIN_CONF='   + self.request_main_conf,
                     '--var',       'VC3_SERVICES_HOME='       + os.environ['VC3_SERVICES_HOME'],
                     '--make-jobs', str(self.builder_n_jobs),
                     '--install',   self.builder_install_dir,
@@ -403,7 +392,7 @@ John Hover <jhover@bnl.gov>
                           metavar="USERNAME", 
                           help="If run as root, drop privileges to USER")
 
-        cluster_default=None
+        cluster_default=os.environ.get('VC3_REQUEST_NAME', None)
         parser.add_option("--cluster",dest="cluster",
                 action="store",
                 default=cluster_default,
