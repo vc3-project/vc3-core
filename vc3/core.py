@@ -56,10 +56,10 @@ class VC3Core(object):
         self.keyfile   = os.path.expanduser(config.get('netcomm', 'keyfile'))
         self.chainfile = os.path.expanduser(config.get('netcomm', 'chainfile'))
 
-        self.builder_path        = os.path.expanduser(config.get('builder', 'path'))
-        self.builder_install_dir = os.path.expanduser(config.get('builder', 'installdir'))
-        self.builder_home_dir    = config.get('builder', 'homedir')
-        self.builder_env         = config.get('builder', 'environment')
+        self.builder_path        = os.path.expandvars(self.__set_builder_opt('path',       'VC3_BUILDER_PATH'))
+        self.builder_install_dir = os.path.expanduser(self.__set_builder_opt('installdir', 'VC3_ROOT'))
+        self.builder_home_dir    = self.__set_builder_opt('homedir', 'HOME')
+        self.builder_env         = self.__set_builder_opt('environment', None)
 
         self.request_log_dir     = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'logs')
         self.request_runtime_dir = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'runtime')
@@ -149,6 +149,27 @@ class VC3Core(object):
         finally:
             s.close()
         return addr
+
+    def __set_builder_opt(option_name, env_var_name):
+        value = None
+        # give preference to conf file
+        if option_name:
+            try:
+                value = config.get('builder', option_name)
+            except NoOptionError:
+                pass
+
+        if not value:
+            if env_var_name:
+                try:
+                    value = os.environ[env_var_name]
+                except KeyError:
+                    pass
+
+        if not value:
+            raise Exception('Could not find value for option.')
+
+        return value
         
     def run(self):
         self.log.debug('Core running...')
@@ -381,7 +402,18 @@ John Hover <jhover@bnl.gov>
                           action="store", 
                           metavar="USERNAME", 
                           help="If run as root, drop privileges to USER")
+
+        cluster_default=None
+        parser.add_option("--cluster",dest="cluster",
+                action="store",
+                default=cluster_default,
+                help='Indicate the name of the cluster %prog should work for.')
         (self.options, self.args) = parser.parse_args()
+
+        if not self.options.cluster:
+            # MISSING! cluster (reques_name) may come from the configuration file.
+            sys.stderr.write('No cluster was specified with --cluster.\n')
+            sys.exit(1)
 
         self.options.confFiles = self.options.confFiles.split(',')
 
@@ -519,7 +551,7 @@ John Hover <jhover@bnl.gov>
 
         try:
             self.log.info('Creating Daemon and entering main loop...')
-            vc3m = VC3Core(self.config)
+            vc3m = VC3Core(self.options.cluster, self.config)
             vc3m.run()
             
         except KeyboardInterrupt:
