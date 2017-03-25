@@ -129,7 +129,7 @@ class VC3Core(object):
             self.log.info(str(e))
             raise e
 
-        pretty = json.dumps({ self.requestid : report }, indent=4, sort_keys=True)
+        pretty = json.dumps({ 'runtime' : { self.requestid : report } }, indent=4, sort_keys=True)
         self.infoclient.storedocument('runtime', pretty)
 
     def __my_host_address(self):
