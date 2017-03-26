@@ -60,14 +60,18 @@ class VC3Core(object):
         self.builder_home_dir    = self.__set_builder_opt('homedir', 'HOME')
         self.builder_env         = self.__set_builder_opt('environment', None)
 
-        self.request_log_dir     = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.requestid, 'logs')
-        self.request_runtime_dir = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.requestid, 'runtime')
+        self.requestid_log_dir     = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.requestid, 'logs')
+        self.requestid_runtime_dir = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.requestid, 'runtime')
+
+        os.environ['VC3_REQUESTID']             = self.requestid
+        os.environ['VC3_REQUESTID_RUNTIME_DIR'] = self.requestid_runtime_dir
+        os.environ['VC3_REQUESTID_LOG_DIR']     = self.requestid_log_dir
 
         # runtime is particular to a run, so we clean it up if it exists
-        if os.path.isdir(self.request_runtime_dir):
-            shutil.rmtree(self.request_runtime_dir)
+        if os.path.isdir(self.requestid_runtime_dir):
+            shutil.rmtree(self.requestid_runtime_dir)
 
-        for dir in [self.request_log_dir, self.request_runtime_dir]:
+        for dir in [self.requestid_log_dir, self.requestid_runtime_dir]:
             if not os.path.isdir(dir):
                 os.makedirs(dir)
 
@@ -93,14 +97,14 @@ class VC3Core(object):
 
     def __exit__(self, exc_type, exc_value, traceback):
         try:
-            dir = self.request_runtime_dir
+            dir = self.requestid_runtime_dir
         except AttributeError:
             # __init__ did not finish running
             pass
 
         # runtime is particular to a run, so we clean it up if it exists
-        if os.path.isdir(self.request_runtime_dir):
-            shutil.rmtree(self.request_runtime_dir)
+        if os.path.isdir(self.requestid_runtime_dir):
+            shutil.rmtree(self.requestid_runtime_dir)
         return self
 
     def __del__(self):
@@ -110,13 +114,13 @@ class VC3Core(object):
         self.host_address = self.__my_host_address()
 
         report = {}
-        report['hostname']                  = self.host_address
-        report['VC3_REQUESTID']             = self.requestid
-        report['VC3_REQUESTID_RUNTIME_DIR'] = self.request_runtime_dir
-        report['VC3_REQUESTID_LOG_DIR']     = self.request_log_dir
+        report['hostname']              = self.host_address
+        report['requestid']             = self.requestid
+        report['requestid_runtime_dir'] = self.requestid_runtime_dir
+        report['requestid_log_dir']     = self.requestid_log_dir
 
         try:
-            f = open(os.path.join(self.request_runtime_dir, 'runtime.conf'), 'w')
+            f = open(os.path.join(self.requestid_runtime_dir, 'runtime.conf'), 'w')
 
             # Section should be named 'request', but python does not allow interpolation inter sections,
             # or named DEFAULT but apf removes all defaults. We use Factory for now,
@@ -221,12 +225,11 @@ class VC3Core(object):
         if not action == 'spawn':
             return
 
-        if 'files' in service:
-            files = service['files']
-            for name in files:
-                self.write_request_file(files[name])
-
         if not service_name in self.processes or not self.processes[service_name].is_alive():
+            if 'files' in service:
+                files = service['files']
+                for name in files:
+                    self.write_requestid_file(files[name])
             cmd = service_name
             if 'command' in service:
                 cmd = service['command']
@@ -236,7 +239,7 @@ class VC3Core(object):
         # terminate site requests that are no longer present
         #self.terminate_old_services(request)
 
-    def write_request_file(self, file_spec):
+    def write_requestid_file(self, file_spec):
         try:
             destination = os.path.expandvars(file_spec['destination'])
             contents    = file_spec['contents']
@@ -252,13 +255,15 @@ class VC3Core(object):
             decoded = urllib.unquote_plus(contents)
             f.write(decoded)
 
+        self.log.info("Wrote file  '" + destination + "' from request specification.")
+
     def execute(self, service_name, payload):
         def service_factory():
             cmd = [self.builder_path,
                     '--silent',
                     '--var',       'VC3_REQUESTID='             + self.requestid,
-                    '--var',       'VC3_REQUESTID_LOG_DIR='     + self.request_log_dir,
-                    '--var',       'VC3_REQUESTID_RUNTIME_DIR=' + self.request_runtime_dir,
+                    '--var',       'VC3_REQUESTID_LOG_DIR='     + self.requestid_log_dir,
+                    '--var',       'VC3_REQUESTID_RUNTIME_DIR=' + self.requestid_runtime_dir,
                     '--var',       'VC3_SERVICES_HOME='         + os.environ['VC3_SERVICES_HOME'],
                     '--make-jobs', str(self.builder_n_jobs),
                     '--install',   self.builder_install_dir,
