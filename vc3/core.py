@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 import traceback
+import urllib
 
 from optparse import OptionParser
 from ConfigParser import ConfigParser, NoOptionError
@@ -36,37 +37,31 @@ import subprocess
 (libpath,tail) = os.path.split(sys.path[0])
 sys.path.append(libpath)
 
-<<<<<<< HEAD
 from pluginmanager.plugin import PluginManager
-from vc3.infoclient import InfoClient 
-=======
-from infoclient import InfoClient 
-#from vc3.plugin import PluginManager
->>>>>>> branch 'master' of https://github.com/vc3-project/vc3-core.git
+from infoclient import InfoClient
 
 class VC3Core(object):
     
-    def __init__(self, request_name, config):
+    def __init__(self, config):
         self.log = logging.getLogger()
         self.log.debug('VC3Core class init...')
-
-        self.request_name = request_name
 
         self.processes    = {}
 
         self.config = config
 
+        self.requestid = config.get('core', 'requestid')
         self.certfile  = os.path.expanduser(config.get('netcomm', 'certfile'))
         self.keyfile   = os.path.expanduser(config.get('netcomm', 'keyfile'))
         self.chainfile = os.path.expanduser(config.get('netcomm', 'chainfile'))
 
-        self.builder_path        = os.path.expanduser(config.get('builder', 'path'))
-        self.builder_install_dir = os.path.expanduser(config.get('builder', 'installdir'))
-        self.builder_home_dir    = config.get('builder', 'homedir')
-        self.builder_env         = config.get('builder', 'environment')
+        self.builder_path        = os.path.expandvars(self.__set_builder_opt('path',       'VC3_BUILDER_PATH'))
+        self.builder_install_dir = os.path.expanduser(self.__set_builder_opt('installdir', 'VC3_ROOT'))
+        self.builder_home_dir    = self.__set_builder_opt('homedir', 'HOME')
+        self.builder_env         = self.__set_builder_opt('environment', None)
 
-        self.request_log_dir     = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'logs')
-        self.request_runtime_dir = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.request_name, 'runtime')
+        self.request_log_dir     = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.requestid, 'logs')
+        self.request_runtime_dir = os.path.join(self.builder_install_dir, self.builder_home_dir, '.' + self.requestid, 'runtime')
 
         # runtime is particular to a run, so we clean it up if it exists
         if os.path.isdir(self.request_runtime_dir):
@@ -75,16 +70,6 @@ class VC3Core(object):
         for dir in [self.request_log_dir, self.request_runtime_dir]:
             if not os.path.isdir(dir):
                 os.makedirs(dir)
-
-        self.host_address = self.__my_host_address()
-        try:
-            f = open(os.path.join(self.request_runtime_dir, 'hostname'), 'w')
-            f.write(self.host_address)
-            f.close()
-            # probably we want to inform the infoservice too... 
-        except Exception, e:
-            self.log.info(str(e))
-            raise e
 
         try:
             self.builder_n_jobs = config.get('builder', 'n_jobs')
@@ -99,6 +84,8 @@ class VC3Core(object):
         self.log.debug("chainfile=%s" % self.chainfile)
         
         self.infoclient = InfoClient(config)    
+        self.__report_requestid_runtime()
+
         self.log.debug('VC3Core class done.')
 
     def __enter__(self):
@@ -119,6 +106,32 @@ class VC3Core(object):
     def __del__(self):
         return self.__exit__(None, None, None)
 
+    def __report_requestid_runtime(self):
+        self.host_address = self.__my_host_address()
+
+        report = {}
+        report['hostname']                = self.host_address
+        report['VC3_REQUESTID']           = self.requestid
+        report['VC3_REQUEST_RUNTIME_DIR'] = self.request_runtime_dir
+        report['VC3_REQUEST_LOG_DIR']     = self.request_log_dir
+
+        try:
+            f = open(os.path.join(self.request_runtime_dir, 'runtime.conf'), 'w')
+
+            # Section should be named 'request', but python does not allow interpolation inter sections,
+            # or named DEFAULT but apf removes all defaults. We use Factory for now,
+            # since it is the section where we need it.  
+            f.write('[Factory]\n\n')
+            for key in report:
+                f.write(key + ' = ' + report[key] + '\n')
+            f.close()
+        except Exception, e:
+            self.log.info(str(e))
+            raise e
+
+        pretty = json.dumps({ 'runtime' : { self.requestid : report } }, indent=4, sort_keys=True)
+        self.infoclient.storedocument('runtime', pretty)
+
     def __my_host_address(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -129,28 +142,43 @@ class VC3Core(object):
         finally:
             s.close()
         return addr
+
+    def __set_builder_opt(self, option_name, env_var_name):
+        value = None
+        # give preference to conf file
+        if option_name:
+            try:
+                value = self.config.get('builder', option_name)
+            except NoOptionError:
+                pass
+
+        if not value and env_var_name:
+            value = os.environ.get(env_var_name, None)
+
+        if not value:
+            raise Exception('Could not find value for option.')
+
+        return value
         
     def run(self):
         self.log.debug('Core running...')
         while True:
             self.log.debug("Core polling....")
-            d = self.infoclient.getdocument('request')
 
             rs = None
             try:
+		d = self.infoclient.getdocument('request')
                 rs = json.loads(d)
             except Exception, e:
-                self.log.degub(e)
+                self.log.debug(e)
                 raise e
 
-            if   'request' in rs   and   self.request_name in rs['request']:
-                self.perform_request(rs['request'][self.request_name])
+            if   'request' in rs   and   self.requestid in rs['request']:
+                self.perform_request(rs['request'][self.requestid])
             else:
-                # There is not a request for this cluster. Should the cluster
+                # There is not a request for this requestid. Should the requestid
                 # start to clean up?
-                raise Exception("HELLO")
-                pass
-
+                raise Exception("My request went away")
             time.sleep(5)
 
     def terminate(self):
@@ -163,11 +191,11 @@ class VC3Core(object):
 
     def perform_request(self, request):
         if not 'action' in request:
-            self.log.info("malformed request for '%s'. no action specified." % (self.request_name))
+            self.log.info("malformed request for '%s'. no action specified." % (self.requestid))
             return
 
         if not 'services' in request:
-            self.log.info("malformed request for '%s'. no services specified." % (self.request_name))
+            self.log.info("malformed request for '%s'. no services specified." % (self.requestid))
             return
 
         action   = request['action']
@@ -177,34 +205,61 @@ class VC3Core(object):
             self.terminate()
 
         for service_name in services:
-            if not service_name in self.whitelist_services:
-                self.log.info("service '%s' is not whitelisted for %s." % (service_name,self.request_name))
-                continue
+            service = services[service_name]
+            self.perform_service_request(service_name, service)
 
-            if not 'action' in services[service_name]:
-                self.log.info("malformed request for '%s:%s'. no action specified." % (self.request_name,service_name))
-                continue
+    def perform_service_request(self, service_name, service):
+        # Disabling whitelisting for now, we just print a message.  
+        if not service_name in self.whitelist_services:
+            self.log.info("service '%s' is not whitelisted for %s. Proceding anyway." % (service_name,self.requestid))
 
-            action = services[service_name]['action']
-            if not action == 'spawn':
-                continue
+        if not 'action' in service:
+            self.log.info("malformed request for '%s:%s'. no action specified." % (self.requestid,service_name))
+            return
 
-            if not service_name in self.processes or not self.processes[service_name].is_alive():
-                cmd = service_name
-                if 'command' in services[service_name]:
-                    cmd = services[service_name]['command']
+        action = service['action']
+        if not action == 'spawn':
+            return
 
-                self.processes[service_name] = self.execute(service_name, cmd)
+        if 'files' in service:
+            files = service['files']
+            for name in files:
+                self.write_request_file(files[name])
+
+        if not service_name in self.processes or not self.processes[service_name].is_alive():
+            cmd = service_name
+            if 'command' in service:
+                cmd = service['command']
+
+            self.processes[service_name] = self.execute(service_name, cmd)
 
         # terminate site requests that are no longer present
         #self.terminate_old_services(request)
 
+    def write_request_file(self, file_spec):
+        try:
+            destination = os.path.expandvars(file_spec['destination'])
+            contents    = file_spec['contents']
+        except KeyError, e:
+            self.log.info('Malformed file specification. Missing key: %s' % (str(e),))
+            raise e
+
+        dir = os.path.dirname(destination)
+        if not os.path.isdir(dir):
+            os.makedirs(dir)
+
+        with open(destination, 'w') as f:
+            decoded = urllib.unquote_plus(contents)
+            f.write(decoded)
+
     def execute(self, service_name, payload):
         def service_factory():
             cmd = [self.builder_path,
-                    '--var',       'VC3_REQUEST_NAME='        + self.request_name,
+                    '--silent',
+                    '--var',       'VC3_REQUESTID='           + self.requestid,
                     '--var',       'VC3_REQUEST_LOG_DIR='     + self.request_log_dir,
                     '--var',       'VC3_REQUEST_RUNTIME_DIR=' + self.request_runtime_dir,
+                    '--var',       'VC3_SERVICES_HOME='       + os.environ['VC3_SERVICES_HOME'],
                     '--make-jobs', str(self.builder_n_jobs),
                     '--install',   self.builder_install_dir,
                     '--home',      self.builder_home_dir,
@@ -218,7 +273,7 @@ class VC3Core(object):
                 subprocess.check_call(cmd)
                 return 0
             except subprocess.CalledProcessError, ex:
-                self.log.info("Service terminated: '" + self.request_name + ":" + service_name + "': " + (ex))
+                self.log.info("Service terminated: '" + self.requestid + ":" + service_name + "': " + str(ex))
                 return ex.returncode
 
         p = Process(target = service_factory)
@@ -312,11 +367,16 @@ John Hover <jhover@bnl.gov>
                           action="store_const", 
                           const=logging.WARNING, 
                           help="Set logging level to WARNING [default]")
+
+        default_conf = "/etc/vc3/vc3-core.conf"
+        if 'VC3_SERVICES_HOME' in os.environ:
+            default_conf = os.path.join(os.environ['VC3_SERVICES_HOME'], 'etc', 'vc3-core.conf') + ',' + default_conf
         parser.add_option("--conf", dest="confFiles", 
-                          default="/etc/vc3/vc3-core.conf",
+                          default=default_conf,
                           action="store", 
                           metavar="FILE1[,FILE2,FILE3]", 
                           help="Load configuration from FILEs (comma separated list)")
+
         parser.add_option("--log", dest="logfile", 
                           default="stdout", 
                           metavar="LOGFILE", 
@@ -330,6 +390,12 @@ John Hover <jhover@bnl.gov>
                           action="store", 
                           metavar="USERNAME", 
                           help="If run as root, drop privileges to USER")
+
+        parser.add_option("--requestid",dest="requestid",
+                action="store",
+                default=None,
+                help='Indicate the name of the requestid %prog should work for.')
+
         (self.options, self.args) = parser.parse_args()
 
         self.options.confFiles = self.options.confFiles.split(',')
@@ -457,6 +523,17 @@ John Hover <jhover@bnl.gov>
                 self.config.read(self.options.confFiles)
             except Exception, e:
                 self.log.error('Config failure')
+                sys.exit(1)
+
+        # ensure this core knows who to work for, give preference to command
+        # line argument.
+        if self.options.requestid:
+            self.config.set('core', 'requestid', self.options.requestid)
+        else:
+            try:
+                self.options.requestid = self.config.get('core', 'requestid')
+            except NoOptionError:
+                self.log.error('No requestid was specified with --requestid or configuration option core.requestid\n')
                 sys.exit(1)
         
         #self.config.set("global", "configfiles", self.options.confFiles)

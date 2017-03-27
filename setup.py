@@ -8,8 +8,8 @@ import os
 import re
 import sys
 
-from vc3 import core
-release_version=core.__version__
+import vc3.core
+release_version=vc3.core.__version__
 
 from distutils.core import setup
 from distutils.command.install import install as install_org
