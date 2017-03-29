@@ -110,10 +110,10 @@ class VC3Core(object):
         self.host_address = self.__my_host_address()
 
         report = {}
-        report['hostname']                = self.host_address
-        report['VC3_REQUESTID']           = self.requestid
-        report['VC3_REQUEST_RUNTIME_DIR'] = self.request_runtime_dir
-        report['VC3_REQUEST_LOG_DIR']     = self.request_log_dir
+        report['hostname']                  = self.host_address
+        report['VC3_REQUESTID']             = self.requestid
+        report['VC3_REQUESTID_RUNTIME_DIR'] = self.request_runtime_dir
+        report['VC3_REQUESTID_LOG_DIR']     = self.request_log_dir
 
         try:
             f = open(os.path.join(self.request_runtime_dir, 'runtime.conf'), 'w')
@@ -256,10 +256,10 @@ class VC3Core(object):
         def service_factory():
             cmd = [self.builder_path,
                     '--silent',
-                    '--var',       'VC3_REQUESTID='           + self.requestid,
-                    '--var',       'VC3_REQUEST_LOG_DIR='     + self.request_log_dir,
-                    '--var',       'VC3_REQUEST_RUNTIME_DIR=' + self.request_runtime_dir,
-                    '--var',       'VC3_SERVICES_HOME='       + os.environ['VC3_SERVICES_HOME'],
+                    '--var',       'VC3_REQUESTID='             + self.requestid,
+                    '--var',       'VC3_REQUESTID_LOG_DIR='     + self.request_log_dir,
+                    '--var',       'VC3_REQUESTID_RUNTIME_DIR=' + self.request_runtime_dir,
+                    '--var',       'VC3_SERVICES_HOME='         + os.environ['VC3_SERVICES_HOME'],
                     '--make-jobs', str(self.builder_n_jobs),
                     '--install',   self.builder_install_dir,
                     '--home',      self.builder_home_dir,
