@@ -37,7 +37,7 @@ import subprocess
 (libpath,tail) = os.path.split(sys.path[0])
 sys.path.append(libpath)
 
-from pluginmanager.plugin import PluginManager
+from pluginmanager import PluginManager
 from vc3.infoclient import InfoClient 
 
 class VC3Core(object):
