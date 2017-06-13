@@ -38,7 +38,7 @@ import subprocess
 sys.path.append(libpath)
 
 import pluginmanager as pm
-from vc3.infoclient import InfoClient 
+from vc3infoservice.infoclient import InfoClient 
 
 class VC3Core(object):
     
