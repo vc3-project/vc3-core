@@ -76,7 +76,7 @@ setup(
     maintainer='John Hover',
     maintainer_email='jhover@bnl.gov',
     url='https://github.com/vc3-project',
-    packages=['vc3'
+    packages=['vc3core'
               ],
     scripts = [ # Utilities and main script
                'scripts/vc3-core',
